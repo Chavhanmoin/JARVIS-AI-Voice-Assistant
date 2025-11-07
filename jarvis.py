@@ -10,7 +10,6 @@ import cv2
 from sys import platform
 from dotenv import load_dotenv
 import openai
-import os
 from youtube import youtube
 from news import speak_news, getNewsUrl
 from OCR import OCR
@@ -32,6 +31,31 @@ PASSWORD = os.getenv("PASSWORD")
 engine = pyttsx3.init()
 voices = engine.getProperty('voices')
 engine.setProperty('voice', voices[0].id)
+
+
+def speak(audio):
+    """Speaks the provided audio string"""
+    engine.say(audio)
+    engine.runAndWait()
+
+def takeCommand():
+    """Takes microphone input from the user and returns string output"""
+    r = sr.Recognizer( )
+    with sr.Microphone( ) as source:
+        print("Listening for command...")
+        r.pause_threshold = 1
+        r.energy_threshold = 400 # Adjust this based on your microphone's sensitivity
+        r.adjust_for_ambient_noise(source, duration=1)
+        audio = r.listen(source)
+
+    try:
+        print("Recognizing...")
+        query = r.recognize_google(audio, language='en-in')
+        print(f"User said: {query}\n")
+    except Exception as e:
+        print("Say that again please...")
+        return "None"
+    return query
 
 
 class Jarvis:
@@ -516,47 +540,38 @@ class Jarvis:
                     )
                     body = response.choices[0].message.content.strip()
                     
-                    # Remove subject line if AI included it
                     if body.startswith('Subject:'):
                         lines = body.split('\n')
                         body = '\n'.join(lines[1:]).strip()
                     
-                    # Remove any remaining subject references
                     body = body.replace(f'Subject: {subject}', '').strip()
                     print(f"AI drafted email: {body}")
                 except Exception as e:
                     print(f"AI drafting failed: {e}")
                     body = f"Dear Sir/Madam,\n\nI am writing regarding {subject}.\n\nThank you for your consideration.\n\nBest regards"
             
-            # Use Gmail API to send email directly
             try:
                 from gmail_service import send_gmail_api
                 
-                # Open Gmail draft with URL method (more reliable)
                 import urllib.parse
                 
-                # Clean up body formatting
                 if body:
                     body = body.replace("[Your Name]", "Admin")
                     body = body.replace("[Recipient's Name]", "")
                     if not any(word in body for word in ["Best regards", "Regards", "Sincerely"]):
                         body += "\n\nBest regards,\nAdmin"
                 
-                # URL encode for Gmail
                 subject_encoded = urllib.parse.quote(subject or "Email from JARVIS")
                 body_encoded = urllib.parse.quote(body or "").replace("%0A", "%0D%0A")
                 
-                # Create Gmail compose URL (recipient left blank)
                 gmail_url = f"https://mail.google.com/mail/?view=cm&fs=1&to=&su={subject_encoded}&body={body_encoded}"
                 
-                # Open Gmail draft
                 import webbrowser
                 webbrowser.open(gmail_url)
                 speak(f"Gmail draft opened with subject: {subject}. Please add recipient and send.")
                 
             except Exception as e:
                 print(f"Gmail API error: {e}")
-                # Fallback to web interface
                 try:
                     from web_automation import init_web_automation
                     bot = init_web_automation()
@@ -576,7 +591,6 @@ class Jarvis:
             return
         
         elif intent == 'create' and 'painting' in str(entities):
-            # Handle "paints" as close paint app
             result = close_anything('paint')
             speak(result)
             return
@@ -610,93 +624,39 @@ class Jarvis:
         speak('I understand you want to chat, but I\'m focused on task automation. How can I help you with system tasks?')
 
 
-def wakeUpJARVIS():
-    bot_ = Jarvis()
-    bot_.wishMe()
-    try:
-        while True:
-            query = takeCommand().lower()
-            if query != 'none':
-                bot_.execute_query(query)
-    except KeyboardInterrupt:
-        speak("Goodbye Sir, shutting down JARVIS")
-        sys.exit(0)
-
-def jarvis_with_wake_word():
-    """JARVIS with wake word activation and keyboard input"""
-    import keyboard
-    import threading
-    import time
-    
-    speak("JARVIS initialized. Say 'Jarvis' or press Ctrl+K for commands.")
-    bot_ = Jarvis()
-    
-    # Simple wake word detection
-    r = sr.Recognizer()
-    mic = sr.Microphone()
-    
-    with mic as source:
-        r.adjust_for_ambient_noise(source, duration=1)
-    
-    def keyboard_listener():
-        """Listen for Ctrl+K keyboard shortcut"""
-        while True:
-            try:
-                if keyboard.is_pressed('ctrl+k'):
-                    print("\n🎯 Keyboard input mode activated")
-                    speak("Type your command")
-                    command = input("Enter command: ").strip()
-                    if command:
-                        print(f"Executing: {command}")
-                        bot_.execute_query(command)
-                    time.sleep(0.5)  # Prevent multiple triggers
-            except:
-                pass
-            time.sleep(0.1)
-    
-    # Start keyboard listener in background
-    keyboard_thread = threading.Thread(target=keyboard_listener, daemon=True)
-    keyboard_thread.start()
-    
-    while True:
-        try:
-            print("Listening for 'Jarvis' or Ctrl+K...")
-            with mic as source:
-                audio = r.listen(source, timeout=0.5, phrase_time_limit=2)
-            
-            text = r.recognize_google(audio, language='en-in').lower()
-            print(f"Heard: {text}")
-            
-            if 'jarvis' in text:
-                speak("At your service sir")
-                print("Listening for command...")
-                query = takeCommand()
-                if query and query != 'none' and query.strip():
-                    print(f"Processing command: {query}")
-                    bot_.execute_query(query.lower())
-                else:
-                    print("No command received, continuing...")
-            else:
-                # If no 'jarvis' but got valid speech, treat as direct command
-                if text and text != 'none' and len(text) > 2:
-                    print(f"Direct command: {text}")
-                    bot_.execute_query(text)
-                    
-        except (sr.WaitTimeoutError, sr.UnknownValueError):
-            pass
-        except KeyboardInterrupt:
-            print("\nShutting down JARVIS...")
-            speak("Goodbye Sir, shutting down JARVIS")
-            os._exit(0)
-        except KeyboardInterrupt:
-            print("\nShutting down JARVIS...")
-            os._exit(0)
-        except Exception as e:
-            print(f"Error: {e}")
-            time.sleep(0.5)
-
-
 if __name__ == '__main__':
     bot = Jarvis()
     bot.wishMe()
-    jarvis_with_wake_word()
+
+    # Continuous listening loop for wake word
+    while True:
+        r = sr.Recognizer()
+        with sr.Microphone() as source:
+            print("Listening for wake word 'Jarvis'...")
+            r.pause_threshold = 1
+            # You can adjust energy_threshold if your mic is too sensitive or not sensitive enough
+            # r.energy_threshold = 400
+            r.adjust_for_ambient_noise(source, duration=1)
+            audio = r.listen(source)
+
+        try:
+            # Recognize speech using Google Web Speech API
+            wake_query = r.recognize_google(audio, language='en-in').lower()
+            print(f"Heard: {wake_query}")
+
+            # Check if the wake word is in the recognized speech
+            if 'jarvis' in wake_query:
+                speak("Yes Sir?")
+                # Now listen for the actual command
+                command = takeCommand().lower()
+                if command != 'none':
+                    bot.execute_query(command)
+
+        except sr.UnknownValueError:
+            # This error means speech was unintelligible, just ignore and continue listening.
+            pass
+        except sr.RequestError as e:
+            print(f"Could not request results from Google Speech Recognition service; {e}")
+        except Exception as e:
+            # General error handling
+            print(f"An error occurred: {e}")

@@ -104,7 +104,7 @@ def takeCommand() -> str:
     r.energy_threshold = 3000
     r.pause_threshold = 1.5  # Wait 1.5 seconds of silence
     
-    with sr.Microphone() as source:
+    with sr.Microphone( ) as source:
         print('🎤 Listening...')
         r.adjust_for_ambient_noise(source, duration=0.3)
         
