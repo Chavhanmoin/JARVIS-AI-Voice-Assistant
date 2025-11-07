@@ -3,40 +3,47 @@ import json
 import pyttsx3
 import pyautogui
 import psutil
-import pyjokes
-import speech_recognition as sr
 import requests
 import geocoder
+import pyjokes
 import subprocess
+import random
+import re
+import speech_recognition as sr
 from difflib import get_close_matches
 from dotenv import load_dotenv
 
-# Load environment variables (especially the weather API key)
-# Adjust the path to your .env location if needed
+# ===========================================
+# 🌍 Environment Setup
+# ===========================================
 load_dotenv(dotenv_path=r"F:\J.A.R.V.I.S-master\.env")
-
 WEATHER_API_KEY = os.getenv("WEATHER_API_KEY")
 
-# Initialize enhanced TTS engine
+# ===========================================
+# 🗣️ Text-to-Speech Engine
+# ===========================================
 engine = pyttsx3.init()
-voices = engine.getProperty('voices')
-engine.setProperty('voice', voices[0].id)
-# Optimize TTS settings
-engine.setProperty('rate', 180)  # Slightly faster speech
-engine.setProperty('volume', 0.9)  # High volume
+voices = engine.getProperty("voices")
+engine.setProperty("voice", voices[0].id)
+engine.setProperty("rate", 180)
+engine.setProperty("volume", 0.9)
 
-# Geolocation for weather
-g = geocoder.ip('me')
+# ===========================================
+# 📚 Local Dictionary Data (✅ Fixed Path)
+# ===========================================
+DATA_PATH = os.path.join(os.path.dirname(__file__), "data.json")
 
-# Dictionary (for translate) data
 try:
-    data = json.load(open('data.json'))
+    with open(DATA_PATH, encoding="utf-8") as f:
+        data = json.load(f)
 except Exception as e:
     data = {}
-    print("Could not load data.json:", e)
+    print(f"⚠️ Could not load dictionary data.json from {DATA_PATH}: {e}")
 
-# App aliases (for Windows .exe names)
-app_aliases = {
+# ===========================================
+# 💻 App Aliases (Windows)
+# ===========================================
+APP_ALIASES = {
     "chrome": "chrome.exe",
     "spotify": "spotify.exe",
     "notepad": "notepad.exe",
@@ -51,149 +58,238 @@ app_aliases = {
     "paint": "mspaint.exe"
 }
 
-def speak(audio) -> None:
-    """Speak out the given text via TTS."""
+# ===========================================
+# 🗣️ Voice Output
+# ===========================================
+def speak(text: str):
+    """Speak text aloud using the TTS engine."""
+    if not text:
+        return
+    print(f"🗣️ JARVIS: {text}")
     try:
-        engine.say(audio)
+        engine.say(text)
         engine.runAndWait()
     except Exception as e:
-        print(f"TTS Error: {e}")
-        print(f"Speaking: {audio}")
+        print(f"❌ TTS Error: {e}")
 
-def screenshot() -> None:
-    """Take a screenshot and save to a predefined folder."""
+# ===========================================
+# 📸 Screenshot
+# ===========================================
+def screenshot():
+    """Take a screenshot and save to user's Pictures folder."""
     try:
-        img = pyautogui.screenshot()
-        save_path = r'C:\Users\Admin\Pictures\Screenshots\screenshot.png'  # Change path as needed
+        save_path = os.path.expanduser("~/Pictures/Screenshots/screenshot.png")
         os.makedirs(os.path.dirname(save_path), exist_ok=True)
-        img.save(save_path)
-        speak("Screenshot taken and saved.")
+        pyautogui.screenshot().save(save_path)
+        speak("Screenshot taken and saved successfully.")
     except Exception as e:
-        print("Error saving screenshot:", e)
-        speak("Sorry, I could not take screenshot.")
+        print(f"📸 Screenshot Error: {e}")
+        speak("Sorry, I couldn't take a screenshot.")
 
-def cpu() -> None:
-    """Report CPU usage and battery status."""
+# ===========================================
+# 💻 System Information
+# ===========================================
+def cpu():
+    """Announce CPU and battery status."""
     try:
-        usage = psutil.cpu_percent()
-        speak("CPU is at " + str(usage) + " percent.")
+        usage = psutil.cpu_percent(interval=1)
+        speak(f"CPU is at {usage} percent.")
     except Exception as e:
-        print("CPU error:", e)
+        print(f"⚙️ CPU Info Error: {e}")
 
     try:
         battery = psutil.sensors_battery()
         if battery:
-            speak("Battery is at " + str(battery.percent) + " percent.")
+            speak(f"Battery is at {battery.percent} percent.")
         else:
             speak("Battery information is not available.")
     except Exception as e:
-        print("Battery error:", e)
+        print(f"🔋 Battery Info Error: {e}")
 
-def joke() -> None:
-    """Tell a few jokes (limited)."""
+# ===========================================
+# 😂 SAFE JOKE SYSTEM (Filtered & Random)
+# ===========================================
+last_joke = None
+
+# Blacklist patterns for filtering bad jokes
+BLACKLIST_PATTERNS = [
+    r"\bkill\b", r"\bshoot\b", r"\bgun\b", r"\bmurder\b", r"\bterror\b",
+    r"\brape\b", r"\bsex\b", r"\bsexual\b", r"\bmolest\b", r"\bminor\b",
+    r"\bchildren\b", r"\bpedophile\b", r"\bbaby\b", r"\bviolence\b",
+    r"\bweapon\b", r"\bsuicide\b", r"\bterrorist\b"
+]
+COMPILED_BLACKLIST = [re.compile(p, re.IGNORECASE) for p in BLACKLIST_PATTERNS]
+
+SAFE_FALLBACK_JOKES = [
+    "Why do programmers prefer dark mode? Because light attracts bugs!",
+    "Why do Java developers wear glasses? Because they don't C sharp.",
+    "A SQL query walks into a bar and says, 'Can I join you?'",
+    "Debugging is like being the detective in a crime movie where you're also the murderer.",
+    "Why do programmers hate nature? It has too many bugs.",
+    "What's a programmer's favorite hangout place? The Foo Bar."
+]
+
+def is_safe_joke(text: str) -> bool:
+    """Check if joke is safe to say."""
+    if not text or len(text) < 10:
+        return False
+    for pat in COMPILED_BLACKLIST:
+        if pat.search(text):
+            print(f"[FILTERED JOKE] Blocked joke: {text[:50]}...")
+            return False
+    return True
+
+def joke():
+    """Tell a safe, filtered random joke each time."""
+    global last_joke
     try:
-        jokes = pyjokes.get_jokes()
-        for i in range(min(5, len(jokes))):
-            speak(jokes[i])
-    except Exception as e:
-        print("Joke error:", e)
+        # Try online joke API first
+        for _ in range(3):
+            res = requests.get("https://v2.jokeapi.dev/joke/Any?type=single", timeout=5)
+            if res.status_code == 200:
+                new_joke = res.json().get("joke", "")
+                if new_joke and is_safe_joke(new_joke) and new_joke != last_joke:
+                    last_joke = new_joke
+                    speak(new_joke)
+                    return
 
+        # Fallback to pyjokes
+        new_joke = pyjokes.get_joke(language="en", category="neutral")
+        if not is_safe_joke(new_joke) or new_joke == last_joke:
+            new_joke = random.choice(SAFE_FALLBACK_JOKES)
+        last_joke = new_joke
+        speak(new_joke)
+
+    except Exception as e:
+        print(f"😂 Joke Error: {e}")
+        # Offline safe fallback
+        safe = random.choice([j for j in SAFE_FALLBACK_JOKES if j != last_joke])
+        last_joke = safe
+        speak(safe)
+
+# ===========================================
+# 🎧 Voice Recognition
+# ===========================================
 def takeCommand() -> str:
-    """Adaptive speech recognition"""
-    r = sr.Recognizer()
-    r.energy_threshold = 3000
-    r.pause_threshold = 1.5  # Wait 1.5 seconds of silence
-    
-    with sr.Microphone( ) as source:
-        print('🎤 Listening...')
-        r.adjust_for_ambient_noise(source, duration=0.3)
-        
-        try:
-            # Listen with adaptive timeout - extends if user keeps speaking
-            audio = r.listen(source, timeout=5, phrase_time_limit=15)
-        except sr.WaitTimeoutError:
-            return 'None'
-    
-    try:
-        query = r.recognize_google(audio, language='en-in')
-        if query and query.strip():
-            print(f'✅ User said: {query}')
-            return query.strip().lower()
-        else:
-            return 'None'
-    except Exception as e:
-        print(f'❌ Recognition failed: {e}')
-        return 'None'
+    """Capture and recognize voice commands."""
+    recognizer = sr.Recognizer()
+    recognizer.energy_threshold = 400
+    recognizer.pause_threshold = 1.2
 
+    with sr.Microphone() as source:
+        print("🎤 Listening...")
+        recognizer.adjust_for_ambient_noise(source, duration=0.6)
+        try:
+            audio = recognizer.listen(source, timeout=6, phrase_time_limit=10)
+        except sr.WaitTimeoutError:
+            return ""
+
+    try:
+        query = recognizer.recognize_google(audio, language="en-in")
+        print(f"✅ You said: {query}")
+        return query.lower().strip()
+    except sr.UnknownValueError:
+        print("🤔 Could not understand speech.")
+        return ""
+    except sr.RequestError:
+        print("🌐 Speech service unavailable.")
+        return ""
+    except Exception as e:
+        print(f"🎧 Recognition Error: {e}")
+        return ""
+
+# ===========================================
+# 🌦️ Dynamic Weather (Auto-location, Fixed)
+# ===========================================
 def weather():
-    """Fetch weather data using the World Weather Online API and speak it."""
+    """Fetch and speak live weather using WorldWeatherOnline API (safe fallback)."""
     if not WEATHER_API_KEY:
-        speak("Weather API key is not set.")
+        speak("Weather API key is missing.")
         return
 
     try:
-        # Use Wardha as default location (your actual location)
-        location = "Wardha"
-        api_url = (
+        g = geocoder.ip("me")
+        location = g.city or "Wardha"
+
+        url = (
             f"http://api.worldweatheronline.com/premium/v1/weather.ashx"
             f"?key={WEATHER_API_KEY}&q={location}&format=json&num_of_days=1"
         )
-        res = requests.get(api_url)
+        res = requests.get(url, timeout=5)
         data = res.json()
 
-        current = data['data']['current_condition'][0]
-        temp_c = current['temp_C']
-        wind = current['windspeedKmph']
-        humidity = current['humidity']
-        description = current['weatherDesc'][0]['value']
+        current = data.get("data", {}).get("current_condition", [{}])[0]
+        if not current:
+            current = data.get("data", {}).get("weather", [{}])[0]
 
-        speak(f"Current weather in {location}")
-        speak(f"Condition: {description}")
-        speak(f"Temperature: {temp_c} degrees Celsius")
-        speak(f"Wind Speed: {wind} kilometers per hour")
-        speak(f"Humidity: {humidity} percent")
+        temp_c = current.get("temp_C", "N/A")
+        desc = current.get("weatherDesc", [{"value": "Unavailable"}])[0]["value"]
+        wind = current.get("windspeedKmph", "N/A")
+        humidity = current.get("humidity", "N/A")
+
+        weather_text = (
+            f"Currently in {location}, it is {desc.lower()}, "
+            f"temperature is {temp_c} degrees Celsius, "
+            f"humidity around {humidity} percent, "
+            f"and wind speed is {wind} kilometers per hour."
+        )
+
+        speak(weather_text)
+        print(f"🌤️ {weather_text}")
+
     except Exception as e:
-        print("Weather fetch error:", e)
-        speak("Sorry, I couldn't fetch weather information right now.")
+        print(f"🌦️ Weather Error: {e}")
+        speak("Sorry, I couldn't fetch the weather details right now.")
 
+# ===========================================
+# 📖 Dictionary / Translation
+# ===========================================
 def translate(word: str):
-    """Translate or define the word (using a loaded dictionary)."""
+    """Translate or define a word from local data.json."""
+    if not word:
+        speak("Please say a word to search.")
+        return
+    if not data:
+        speak("Dictionary data is missing.")
+        return
+
     word = word.lower()
     if word in data:
         speak(data[word])
-    elif len(get_close_matches(word, data.keys())) > 0:
-        x = get_close_matches(word, data.keys())[0]
-        speak('Did you mean ' + x + ' instead? Respond Yes or No.')
-        ans = takeCommand().lower()
-        if 'yes' in ans:
-            speak(data[x])
-        elif 'no' in ans:
-            speak("Word doesn't exist. Please check your spelling.")
+    elif matches := get_close_matches(word, data.keys()):
+        suggestion = matches[0]
+        speak(f"Did you mean {suggestion}? Please say Yes or No.")
+        response = takeCommand()
+        if "yes" in response:
+            speak(data[suggestion])
         else:
-            speak("I didn't understand your response.")
+            speak("Okay, word not found.")
     else:
-        speak("Word doesn't exist in the dictionary.")
+        speak("Sorry, that word is not in my dictionary.")
 
+# ===========================================
+# 💾 Application Management
+# ===========================================
 def resolve_app_name(name: str) -> str:
-    """Convert a voice-given name to the real executable name."""
-    return app_aliases.get(name.lower(), name + ".exe")
+    """Map spoken app name to its .exe equivalent."""
+    return APP_ALIASES.get(name.lower(), name + ".exe")
 
 def open_app(app_name: str):
-    """Open an application by name."""
+    """Open any installed application."""
     try:
         resolved = resolve_app_name(app_name)
-        subprocess.Popen(resolved)
+        subprocess.Popen(resolved, shell=True)
         speak(f"Opening {app_name}")
     except Exception as e:
-        print("Error opening app:", e)
-        speak(f"Sorry, I couldn't open {app_name}")
+        print(f"🚫 Open App Error: {e}")
+        speak(f"Sorry, I couldn't open {app_name}.")
 
 def close_app(app_name: str):
-    """Close a running application by killing its process."""
+    """Close any running application."""
     resolved = resolve_app_name(app_name)
-    for proc in psutil.process_iter(['pid', 'name']):
+    for proc in psutil.process_iter(["pid", "name"]):
         try:
-            if resolved.lower() in proc.info['name'].lower():
+            if resolved.lower() in proc.info["name"].lower():
                 proc.kill()
                 speak(f"{app_name} has been closed.")
                 return

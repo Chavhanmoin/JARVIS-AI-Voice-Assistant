@@ -4,117 +4,147 @@ import subprocess
 from pathlib import Path
 from helpers import speak
 
-def create_file(file_path, content=""):
-    """Create a new file"""
+
+# ===============================
+# 🔹 File & Folder Management
+# ===============================
+
+def create_file(file_path: str, content: str = "") -> str:
+    """Create a new file, including parent folders if needed."""
     try:
-        path = Path(file_path)
+        path = Path(file_path).expanduser().resolve()
         path.parent.mkdir(parents=True, exist_ok=True)
-        
-        with open(path, 'w') as f:
-            f.write(content)
-        
-        speak(f"File created: {path.name}")
-        return f"File created successfully: {file_path}"
+        path.write_text(content)
+        speak(f"File created successfully: {path.name}")
+        return f"✅ File created: {path}"
     except Exception as e:
-        speak("Failed to create file")
-        return f"Error: {str(e)}"
+        speak("Sorry, I failed to create the file.")
+        return f"❌ File creation error: {e}"
 
-def create_folder(folder_path):
-    """Create a new folder"""
-    try:
-        Path(folder_path).mkdir(parents=True, exist_ok=True)
-        speak(f"Folder created: {Path(folder_path).name}")
-        return f"Folder created successfully: {folder_path}"
-    except Exception as e:
-        speak("Failed to create folder")
-        return f"Error: {str(e)}"
 
-def open_file(file_path):
-    """Open a file with default application"""
+def create_folder(folder_path: str) -> str:
+    """Create a new folder, even nested ones."""
     try:
-        if os.path.exists(file_path):
-            os.startfile(file_path)
-            speak(f"Opening {Path(file_path).name}")
-            return f"File opened: {file_path}"
-        else:
-            speak("File not found")
-            return f"File not found: {file_path}"
+        path = Path(folder_path).expanduser().resolve()
+        path.mkdir(parents=True, exist_ok=True)
+        speak(f"Folder created successfully: {path.name}")
+        return f"✅ Folder created: {path}"
     except Exception as e:
-        speak("Failed to open file")
-        return f"Error: {str(e)}"
+        speak("Sorry, I couldn't create the folder.")
+        return f"❌ Folder creation error: {e}"
 
-def open_folder(folder_path):
-    """Open a folder in file explorer"""
-    try:
-        if os.path.exists(folder_path):
-            subprocess.run(['explorer', folder_path])
-            speak(f"Opening {Path(folder_path).name} folder")
-            return f"Folder opened: {folder_path}"
-        else:
-            speak("Folder not found")
-            return f"Folder not found: {folder_path}"
-    except Exception as e:
-        speak("Failed to open folder")
-        return f"Error: {str(e)}"
 
-def delete_file(file_path):
-    """Delete a file"""
+def open_file(file_path: str) -> str:
+    """Open a file using the default application."""
     try:
-        if os.path.exists(file_path):
-            os.remove(file_path)
-            speak(f"File deleted: {Path(file_path).name}")
-            return f"File deleted: {file_path}"
-        else:
-            speak("File not found")
-            return f"File not found: {file_path}"
-    except Exception as e:
-        speak("Failed to delete file")
-        return f"Error: {str(e)}"
+        path = Path(file_path).expanduser().resolve()
+        if not path.exists():
+            speak("File not found.")
+            return f"⚠️ File not found: {path}"
 
-def delete_folder(folder_path):
-    """Delete a folder"""
-    try:
-        if os.path.exists(folder_path):
-            shutil.rmtree(folder_path)
-            speak(f"Folder deleted: {Path(folder_path).name}")
-            return f"Folder deleted: {folder_path}"
-        else:
-            speak("Folder not found")
-            return f"Folder not found: {folder_path}"
+        os.startfile(path)
+        speak(f"Opening file: {path.name}")
+        return f"✅ File opened: {path}"
     except Exception as e:
-        speak("Failed to delete folder")
-        return f"Error: {str(e)}"
+        speak("Sorry, I failed to open that file.")
+        return f"❌ File open error: {e}"
 
-def copy_file(source, destination):
-    """Copy a file"""
-    try:
-        shutil.copy2(source, destination)
-        speak(f"File copied to {Path(destination).name}")
-        return f"File copied from {source} to {destination}"
-    except Exception as e:
-        speak("Failed to copy file")
-        return f"Error: {str(e)}"
 
-def move_file(source, destination):
-    """Move a file"""
+def open_folder(folder_path: str) -> str:
+    """Open a folder in File Explorer."""
     try:
-        shutil.move(source, destination)
-        speak(f"File moved to {Path(destination).name}")
-        return f"File moved from {source} to {destination}"
-    except Exception as e:
-        speak("Failed to move file")
-        return f"Error: {str(e)}"
+        path = Path(folder_path).expanduser().resolve()
+        if not path.exists():
+            speak("Folder not found.")
+            return f"⚠️ Folder not found: {path}"
 
-def list_files(folder_path):
-    """List files in a folder"""
-    try:
-        if os.path.exists(folder_path):
-            files = os.listdir(folder_path)
-            speak(f"Found {len(files)} items in folder")
-            return f"Files in {folder_path}: {files}"
-        else:
-            speak("Folder not found")
-            return f"Folder not found: {folder_path}"
+        subprocess.run(["explorer", str(path)])
+        speak(f"Opening folder: {path.name}")
+        return f"✅ Folder opened: {path}"
     except Exception as e:
-        speak("Failed to list files")
-        return f"Error: {str(e)}"
+        speak("Sorry, I couldn't open the folder.")
+        return f"❌ Folder open error: {e}"
+
+
+def delete_file(file_path: str) -> str:
+    """Delete a file safely."""
+    try:
+        path = Path(file_path).expanduser().resolve()
+        if not path.exists():
+            speak("File not found.")
+            return f"⚠️ File not found: {path}"
+
+        os.remove(path)
+        speak(f"File deleted: {path.name}")
+        return f"🗑️ File deleted: {path}"
+    except Exception as e:
+        speak("Sorry, I failed to delete the file.")
+        return f"❌ File delete error: {e}"
+
+
+def delete_folder(folder_path: str) -> str:
+    """Delete a folder and all its contents."""
+    try:
+        path = Path(folder_path).expanduser().resolve()
+        if not path.exists():
+            speak("Folder not found.")
+            return f"⚠️ Folder not found: {path}"
+
+        shutil.rmtree(path)
+        speak(f"Folder deleted: {path.name}")
+        return f"🗑️ Folder deleted: {path}"
+    except Exception as e:
+        speak("Sorry, I failed to delete the folder.")
+        return f"❌ Folder delete error: {e}"
+
+
+def copy_file(source: str, destination: str) -> str:
+    """Copy a file to a destination."""
+    try:
+        src = Path(source).expanduser().resolve()
+        dst = Path(destination).expanduser().resolve()
+
+        if not src.exists():
+            speak("Source file not found.")
+            return f"⚠️ Source not found: {src}"
+
+        shutil.copy2(src, dst)
+        speak(f"File copied successfully to {dst.name}")
+        return f"✅ File copied: {src} ➜ {dst}"
+    except Exception as e:
+        speak("Sorry, I failed to copy the file.")
+        return f"❌ Copy error: {e}"
+
+
+def move_file(source: str, destination: str) -> str:
+    """Move a file to a new destination."""
+    try:
+        src = Path(source).expanduser().resolve()
+        dst = Path(destination).expanduser().resolve()
+
+        if not src.exists():
+            speak("Source file not found.")
+            return f"⚠️ Source not found: {src}"
+
+        shutil.move(src, dst)
+        speak(f"File moved to {dst.name}")
+        return f"✅ File moved: {src} ➜ {dst}"
+    except Exception as e:
+        speak("Sorry, I failed to move the file.")
+        return f"❌ Move error: {e}"
+
+
+def list_files(folder_path: str) -> str:
+    """List files and folders in a given directory."""
+    try:
+        path = Path(folder_path).expanduser().resolve()
+        if not path.exists():
+            speak("Folder not found.")
+            return f"⚠️ Folder not found: {path}"
+
+        files = os.listdir(path)
+        speak(f"Found {len(files)} items in this folder.")
+        return f"📁 Files in {path}:\n" + "\n".join(files)
+    except Exception as e:
+        speak("Sorry, I couldn't list the files.")
+        return f"❌ List error: {e}"

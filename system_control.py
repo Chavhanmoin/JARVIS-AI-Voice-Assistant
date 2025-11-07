@@ -2,179 +2,333 @@ import os
 import subprocess
 import psutil
 import winreg
-from pathlib import Path
+import time
+import ctypes
+import threading
+import tkinter as tk
+from helpers import speak
 
+# ===================================================
+# 🧠 JARVIS SYSTEM CONTROL — FULL EDITION
+# ===================================================
+
+SendInput = ctypes.windll.user32.keybd_event
+
+# Volume & Brightness Keys
+VOLUME_UP, VOLUME_DOWN, VOLUME_MUTE = 0xAF, 0xAE, 0xAD
+BRIGHTNESS_UP, BRIGHTNESS_DOWN = 0xB9, 0xB8
+
+
+# ===================================================
+# 🌞 JARVIS CUSTOM OVERLAY (Brightness + Volume)
+# ===================================================
+def show_overlay(level, mode="brightness"):
+    """Display a smooth overlay popup with Jarvis theme."""
+    def _overlay():
+        root = tk.Tk()
+        root.overrideredirect(True)
+        root.attributes('-topmost', True)
+        root.attributes('-alpha', 0.9)
+        root.configure(bg='#1c1c1c')
+
+        screen_w = root.winfo_screenwidth()
+        screen_h = root.winfo_screenheight()
+        width, height = 320, 90
+        x = (screen_w // 2) - (width // 2)
+        y = screen_h - 180
+        root.geometry(f"{width}x{height}+{x}+{y}")
+
+        frame = tk.Frame(root, bg="#2b2b2b", bd=2, relief="ridge")
+        frame.pack(fill="both", expand=True, padx=8, pady=8)
+
+        title = "Brightness" if mode == "brightness" else "Volume"
+        label = tk.Label(frame, text=f"{title}: {level}%", fg="#ff3333", bg="#2b2b2b", font=("Segoe UI", 15, "bold"))
+        label.pack(pady=(5, 4))
+
+        canvas = tk.Canvas(frame, bg="gray25", height=20, bd=0, highlightthickness=0)
+        canvas.pack(padx=10, pady=5, fill="x")
+
+        fill_len = int((level / 100) * 300)
+        canvas.create_rectangle(0, 0, fill_len, 20, fill="#ff3333", width=0)
+
+        root.after(1300, root.destroy)
+        root.mainloop()
+
+    threading.Thread(target=_overlay, daemon=True).start()
+
+
+# ===================================================
+# 🖥️ MAIN SYSTEM CONTROLLER CLASS
+# ===================================================
 class SystemController:
+    """Handles app management, file control, volume, brightness, and system commands."""
+
     def __init__(self):
+        speak("System controller initialized and ready.")
         self.installed_apps = self._get_installed_apps()
-    
+
+    # ---------------------------------------------------
+    # 🔍 Fetch Installed Apps (Registry)
+    # ---------------------------------------------------
     def _get_installed_apps(self):
-        """Get list of installed applications from registry"""
         apps = {}
         try:
-            key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall")
-            for i in range(winreg.QueryInfoKey(key)[0]):
-                subkey_name = winreg.EnumKey(key, i)
-                subkey = winreg.OpenKey(key, subkey_name)
+            paths = [
+                r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall",
+                r"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall",
+            ]
+            for path in paths:
                 try:
-                    name = winreg.QueryValueEx(subkey, "DisplayName")[0]
-                    path = winreg.QueryValueEx(subkey, "InstallLocation")[0]
-                    apps[name.lower()] = path
+                    key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, path)
+                    for i in range(winreg.QueryInfoKey(key)[0]):
+                        subkey_name = winreg.EnumKey(key, i)
+                        subkey = winreg.OpenKey(key, subkey_name)
+                        try:
+                            name = winreg.QueryValueEx(subkey, "DisplayName")[0]
+                            install_path = winreg.QueryValueEx(subkey, "InstallLocation")[0]
+                            if name and install_path:
+                                apps[name.lower()] = install_path
+                        except:
+                            continue
                 except:
-                    pass
-        except:
-            pass
+                    continue
+        except Exception as e:
+            print(f"⚠️ Registry read error: {e}")
         return apps
-    
+
+    # ---------------------------------------------------
+    # 🚀 OPEN APPLICATION / FILE / FOLDER
+    # ---------------------------------------------------
     def open_application(self, app_name):
-        """Open any application by name"""
-        app_name = app_name.lower()
-        
-        # Direct command mapping for common apps
-        app_commands = {
-            'notepad': 'notepad.exe',
-            'calculator': 'calc.exe',
-            'calc': 'calc.exe',
-            'paint': 'mspaint.exe',
-            'mspaint': 'mspaint.exe',
-            'chrome': r'"C:\Program Files\Google\Chrome\Application\chrome.exe"',
-            'cmd': 'cmd.exe',
-            'command prompt': 'cmd.exe'
+        app_name = app_name.lower().strip()
+        app_map = {
+            "notepad": "notepad.exe",
+            "calculator": "calc.exe",
+            "paint": "mspaint.exe",
+            "chrome": r'"C:\Program Files\Google\Chrome\Application\chrome.exe"',
+            "cmd": "cmd.exe",
+            "command prompt": "cmd.exe",
+            "vscode": r'"C:\Users\%USERNAME%\AppData\Local\Programs\Microsoft VS Code\Code.exe"',
+            "word": "winword.exe",
+            "excel": "excel.exe",
+            "spotify": "spotify.exe",
+            "settings": "start ms-settings:",
         }
-        
-        # Skip VS Code - prioritize folder shortcuts
-        if app_name in ['documents', 'desktop', 'downloads', 'pictures', 'music']:
-            return self.open_file_or_folder(app_name)
-        
-        if app_name in app_commands:
-            try:
-                subprocess.Popen(app_commands[app_name], shell=True)
-                return f"Opened {app_name}"
-            except Exception as e:
-                return f"Failed to open {app_name}: {e}"
-        
-        # Try direct command
-        try:
-            subprocess.Popen(app_name, shell=True)
-            return f"Opened {app_name}"
-        except:
-            pass
-        
-        # Try with .exe extension
-        try:
-            subprocess.Popen(f"{app_name}.exe", shell=True)
-            return f"Opened {app_name}.exe"
-        except:
-            pass
-        
-        return f"Could not find application: {app_name}"
-    
-    def close_application(self, app_name):
-        """Close any running application with exact matching"""
-        # Exact process name mapping only
-        process_map = {
-            'notepad': 'notepad.exe',
-            'calculator': 'CalculatorApp.exe',
-            'calc': 'CalculatorApp.exe', 
-            'paint': 'mspaint.exe',
-            'mspaint': 'mspaint.exe',
-            'paints': 'mspaint.exe',
-            'chrome': 'chrome.exe',
-            'spotify': 'Spotify.exe'
+
+        folders = {
+            "documents": os.path.expanduser("~/Documents"),
+            "desktop": os.path.expanduser("~/Desktop"),
+            "downloads": os.path.expanduser("~/Downloads"),
+            "pictures": os.path.expanduser("~/Pictures"),
+            "music": os.path.expanduser("~/Music"),
         }
-        
-        print(f"DEBUG: Trying to close '{app_name}'")
-        
-        # Only use exact matches from the map
-        if app_name.lower() not in process_map:
-            return f"App '{app_name}' not in safe close list. Use exact process name."
-        
-        target_process = process_map[app_name.lower()]
-        print(f"DEBUG: Looking for process '{target_process}'")
-        
-        killed = []
-        running_processes = []
-        
-        for proc in psutil.process_iter(['pid', 'name']):
+
+        # Folder handling
+        if app_name in folders:
+            path = folders[app_name]
+            os.startfile(path)
+            speak(f"Opened {app_name} folder.")
+            return f"✅ Opened {app_name}."
+
+        # App mapping
+        if app_name in app_map:
             try:
-                running_processes.append(proc.info['name'])
-                # Only exact match
-                if proc.info['name'].lower() == target_process.lower():
-                    print(f"DEBUG: Found and killing process {proc.info['name']} (PID: {proc.info['pid']})")
-                    proc.kill()
-                    killed.append(proc.info['name'])
+                subprocess.Popen(app_map[app_name], shell=True)
+                speak(f"{app_name} opened successfully.")
+                return f"✅ Opened {app_name}."
             except Exception as e:
-                print(f"DEBUG: Error with process: {e}")
-        
-        print(f"DEBUG: Running processes containing 'notepad': {[p for p in running_processes if 'notepad' in p.lower()]}")
-        
-        if killed:
-            return f"Closed: {', '.join(killed)}"
-        return f"No running process found for: {app_name}. Target was: {target_process}"
-    
-    def open_file_or_folder(self, path):
-        """Open any file or folder"""
-        try:
-            # Common folder shortcuts
-            shortcuts = {
-                'documents': os.path.expanduser('~\\Documents'),
-                'desktop': os.path.expanduser('~\\Desktop'),
-                'downloads': os.path.expanduser('~\\Downloads'),
-                'pictures': os.path.expanduser('~\\Pictures'),
-                'music': os.path.expanduser('~\\Music')
-            }
-            
-            # Check shortcuts first
-            if path.lower() in shortcuts:
-                os.startfile(shortcuts[path.lower()])
-                return f"Opened: {shortcuts[path.lower()]}"
-            
+                speak(f"Failed to open {app_name}.")
+                return f"⚠️ Failed to open {app_name}: {e}"
+
+        # Registry apps
+        if app_name in self.installed_apps:
+            path = self.installed_apps[app_name]
             if os.path.exists(path):
                 os.startfile(path)
-                return f"Opened: {path}"
-            
-            # Try expanding user path
-            expanded_path = os.path.expanduser(path)
-            if os.path.exists(expanded_path):
-                os.startfile(expanded_path)
-                return f"Opened: {expanded_path}"
-            
-            return f"File/folder not found: {path}"
+                speak(f"{app_name} opened successfully.")
+                return f"✅ Opened {app_name}."
+
+        # .exe fallback
+        try:
+            subprocess.Popen(f"{app_name}.exe", shell=True)
+            speak(f"{app_name} opened successfully.")
+            return f"✅ Opened {app_name}."
+        except:
+            speak(f"I couldn’t find {app_name}.")
+            return f"❌ Could not open {app_name}."
+
+    # ---------------------------------------------------
+    # 🛑 CLOSE APPLICATION
+    # ---------------------------------------------------
+    def close_application(self, app_name):
+        app_name = app_name.lower().strip()
+        process_map = {
+            "notepad": "notepad.exe",
+            "calculator": "CalculatorApp.exe",
+            "paint": "mspaint.exe",
+            "chrome": "chrome.exe",
+            "spotify": "spotify.exe",
+            "word": "winword.exe",
+            "excel": "excel.exe",
+            "vscode": "Code.exe",
+            "settings": "SystemSettings.exe",
+        }
+
+        target = process_map.get(app_name, f"{app_name}.exe")
+        killed = []
+
+        for proc in psutil.process_iter(["pid", "name"]):
+            try:
+                if target.lower() in proc.info["name"].lower():
+                    proc.kill()
+                    killed.append(proc.info["name"])
+            except:
+                continue
+
+        if killed:
+            speak(f"{app_name} closed successfully.")
+            return f"🛑 Closed: {', '.join(killed)}"
+        else:
+            speak(f"{app_name} is not currently running.")
+            return f"⚠️ No process found for {app_name}."
+
+    # ---------------------------------------------------
+    # 💾 OPEN FILE OR PATH
+    # ---------------------------------------------------
+    def open_file_or_folder(self, path):
+        try:
+            expanded = os.path.expanduser(path)
+            if os.path.exists(expanded):
+                os.startfile(expanded)
+                speak(f"Opened {path}.")
+                return f"✅ Opened {path}."
+            else:
+                speak(f"Path not found for {path}.")
+                return f"❌ Path not found: {path}"
         except Exception as e:
-            return f"Error opening {path}: {str(e)}"
-    
+            speak(f"Error opening {path}.")
+            return f"⚠️ Error opening {path}: {e}"
+
+    # ---------------------------------------------------
+    # ⚙️ EXECUTE SYSTEM COMMAND
+    # ---------------------------------------------------
     def system_command(self, command):
-        """Execute any system command"""
         try:
             result = subprocess.run(command, shell=True, capture_output=True, text=True)
-            return f"Command executed: {command}\nOutput: {result.stdout}"
+            output = result.stdout.strip() or result.stderr.strip() or "No output."
+            speak("Command executed successfully.")
+            return f"💻 {command}\nOutput:\n{output}"
         except Exception as e:
-            return f"Error executing command: {str(e)}"
+            speak("Error executing command.")
+            return f"⚠️ System command error: {e}"
 
-# Integration functions for jarvis.py
+    # ---------------------------------------------------
+    # 🔊 VOLUME CONTROL
+    # ---------------------------------------------------
+    def volume_control(self, action, value=None):
+        try:
+            value = int(value or 10)
+            steps = value // 2
+
+            if "up" in action:
+                for _ in range(steps):
+                    SendInput(VOLUME_UP, 0, 0, 0)
+                    time.sleep(0.05)
+                speak(f"Volume increased by {value} percent.")
+
+            elif "down" in action:
+                for _ in range(steps):
+                    SendInput(VOLUME_DOWN, 0, 0, 0)
+                    time.sleep(0.05)
+                speak(f"Volume decreased by {value} percent.")
+
+            elif "mute" in action:
+                SendInput(VOLUME_MUTE, 0, 0, 0)
+                speak("Volume muted.")
+
+            elif "set" in action:
+                for _ in range(60):
+                    SendInput(VOLUME_DOWN, 0, 0, 0)
+                    time.sleep(0.01)
+                for _ in range(value // 2):
+                    SendInput(VOLUME_UP, 0, 0, 0)
+                    time.sleep(0.03)
+                speak(f"Volume set to {value} percent.")
+            else:
+                speak("Please say volume up, down, set, or mute.")
+
+            show_overlay(value, "volume")
+
+        except Exception as e:
+            speak("Volume control failed.")
+            print(f"⚠️ Volume error: {e}")
+
+    # ---------------------------------------------------
+    # 🌞 BRIGHTNESS CONTROL
+    # ---------------------------------------------------
+    def brightness_control(self, action, value=None):
+        try:
+            value = int(value or 10)
+            current = int(subprocess.getoutput(
+                'powershell "(Get-CimInstance -Namespace root/WMI -ClassName WmiMonitorBrightness).CurrentBrightness"'
+            ) or 50)
+            new_brightness = current
+
+            if "up" in action:
+                new_brightness = min(100, current + value)
+                speak(f"Brightness increased to {new_brightness} percent.")
+            elif "down" in action:
+                new_brightness = max(0, current - value)
+                speak(f"Brightness decreased to {new_brightness} percent.")
+            elif "set" in action:
+                new_brightness = max(0, min(100, value))
+                speak(f"Brightness set to {new_brightness} percent.")
+            else:
+                speak("Please say brightness up, down, or set.")
+                return
+
+            subprocess.run(
+                f'powershell "(Get-WmiObject -Namespace root/WMI -Class WmiMonitorBrightnessMethods).WmiSetBrightness(1,{new_brightness})"',
+                shell=True, capture_output=True
+            )
+
+            show_overlay(new_brightness, "brightness")
+
+        except Exception as e:
+            speak("Brightness control failed.")
+            print(f"⚠️ Brightness error: {e}")
+
+
+# ===================================================
+# 🧩 WRAPPER FUNCTIONS
+# ===================================================
+_controller_instance = None
+
+def get_controller():
+    global _controller_instance
+    if _controller_instance is None:
+        _controller_instance = SystemController()
+    return _controller_instance
+
 def open_anything(name):
-    """Universal open function"""
-    controller = SystemController()
-    
-    # Check if it's a common folder first
-    folders = ['documents', 'desktop', 'downloads', 'pictures', 'music']
-    if name.lower() in folders:
-        return controller.open_file_or_folder(name)
-    
-    # Try as application
+    controller = get_controller()
     result = controller.open_application(name)
-    if "Could not find" not in result:
-        return result
-    
-    # Try as file/folder
-    return controller.open_file_or_folder(name)
+    if "❌" in result:
+        result = controller.open_file_or_folder(name)
+    return result
 
 def close_anything(name):
-    """Universal close function"""
-    controller = SystemController()
+    controller = get_controller()
     return controller.close_application(name)
 
 def execute_system_command(command):
-    """Execute system command"""
-    controller = SystemController()
+    controller = get_controller()
     return controller.system_command(command)
+
+def change_volume(action, value=None):
+    controller = get_controller()
+    return controller.volume_control(action, value)
+
+def change_brightness(action, value=None):
+    controller = get_controller()
+    return controller.brightness_control(action, value)

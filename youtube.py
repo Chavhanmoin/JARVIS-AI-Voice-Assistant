@@ -1,67 +1,91 @@
+# youtube.py — optimized
 import urllib.parse
 import webbrowser
-from sys import platform
 import os
+import shutil
+import sys
+from typing import Optional
 
-# Register Chrome browser path based on OS
-if platform == "linux" or platform == "linux2":
-    chrome_path = '/usr/bin/google-chrome'
-
-elif platform == "darwin":
-    chrome_path = 'open -a /Applications/Google\\ Chrome.app'
-
-elif platform == "win32":
-    # Try both possible Chrome locations
-    chrome_paths = [
-        r'C:\Program Files\Google\Chrome\Application\chrome.exe',
-        r'C:\Program Files (x86)\Google\Chrome\Application\chrome.exe'
-    ]
-    chrome_path = None
-    for path in chrome_paths:
-        if os.path.exists(path):
-            chrome_path = path
-            break
-    if not chrome_path:
-        chrome_path = chrome_paths[0]  # Default fallback
-
-else:
-    print('Unsupported OS')
-    exit(1)
-
-# Register Chrome browser if available
-if platform == "win32" and chrome_path:
-    try:
-        webbrowser.register('chrome', None, webbrowser.BackgroundBrowser(chrome_path))
-        print(f"Chrome registered: {chrome_path}")
-    except Exception as e:
-        print(f"Failed to register Chrome: {e}")
-else:
-    try:
-        webbrowser.register('chrome', None, webbrowser.BackgroundBrowser(chrome_path))
-    except Exception as e:
-        print(f"Failed to register Chrome: {e}")
-
-def youtube(textToSearch: str) -> None:
+def _find_chrome_executable() -> Optional[str]:
     """
-    Opens a new Chrome tab with YouTube search results for the given query.
+    Attempt to locate a Chrome executable in a cross-platform manner.
+    Returns the path to the executable or None if not found.
     """
-    if not textToSearch or textToSearch.strip().lower() == "none":
-        print("Empty or invalid search query.")
-        return
+    # Try common names on PATH first
+    for name in ("google-chrome", "chrome", "chrome.exe", "Google Chrome"):
+        path = shutil.which(name)
+        if path:
+            return path
 
-    query = urllib.parse.quote(textToSearch)
-    url = "https://www.youtube.com/results?search_query=" + query
+    # Platform-specific common install locations
+    if sys.platform.startswith("win"):
+        candidates = [
+            r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+            r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe"
+        ]
+        for c in candidates:
+            if os.path.exists(c):
+                return c
+    elif sys.platform.startswith("darwin"):
+        mac_path = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+        if os.path.exists(mac_path):
+            return mac_path
+    else:  # linux
+        # common Chrome/Chromium binary names
+        for c in ("/usr/bin/google-chrome-stable", "/usr/bin/google-chrome", "/usr/bin/chromium-browser", "/usr/bin/chromium"):
+            if os.path.exists(c):
+                return c
+
+    return None
+
+# Register Chrome once (if available)
+_CHROME_PATH = _find_chrome_executable()
+if _CHROME_PATH:
+    try:
+        webbrowser.register('chrome', None, webbrowser.BackgroundBrowser(_CHROME_PATH))
+        print(f"Chrome registered: {_CHROME_PATH}")
+    except Exception as e:
+        print(f"Failed to register Chrome ({_CHROME_PATH}): {e}")
+else:
+    print("Chrome not found — will use system default browser.")
+
+def youtube(textToSearch: str) -> str:
+    """
+    Open a YouTube search for the given query.
+    Returns a short status message.
+    """
+    if not textToSearch or not str(textToSearch).strip():
+        msg = "Empty or invalid search query."
+        print(msg)
+        return msg
+
+    query = urllib.parse.quote_plus(str(textToSearch).strip())
+    url = f"https://www.youtube.com/results?search_query={query}"
     print(f"Opening YouTube search: {url}")
 
+    # Prefer registered Chrome; fall back to default browser
     try:
-        webbrowser.get('chrome').open_new_tab(url)
-        print(f"✓ YouTube search opened for: {textToSearch}")
-    except:
-        # Fallback to default browser
-        print("Using default browser for YouTube search")
-        webbrowser.open_new_tab(url)
-        print(f"✓ YouTube search opened for: {textToSearch}")
+        if _CHROME_PATH:
+            webbrowser.get('chrome').open_new_tab(url)
+            msg = f"YouTube search opened in Chrome for: {textToSearch}"
+            print(msg)
+            return msg
+    except Exception as e:
+        print(f"Warning: failed to open Chrome ({e}). Falling back to default browser.")
 
-# For testing standalone
-if __name__ == '__main__':
-    youtube('any text')
+    # Default fallback
+    try:
+        webbrowser.open_new_tab(url)
+        msg = f"YouTube search opened in default browser for: {textToSearch}"
+        print(msg)
+        return msg
+    except Exception as e:
+        msg = f"Failed to open YouTube search: {e}"
+        print(msg)
+        return msg
+
+# Short alias to keep backwards compatibility
+open_youtube_search = youtube
+
+if __name__ == "__main__":
+    youtube("lofi hip hop radio")

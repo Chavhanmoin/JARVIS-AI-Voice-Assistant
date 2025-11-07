@@ -271,9 +271,6 @@ python jarvis.py
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-## 👥 Authors
-
-- **Your Name** - *Initial work* - [YourGitHub](https://github.com/yourusername)
 
 ## 🙏 Acknowledgments
 
@@ -283,16 +280,6 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - Python speech recognition libraries
 - Face recognition algorithms
 
-## 📞 Support
-
-For support, email support@jarvis-ai.com or join our [Discord](https://discord.gg/jarvis-ai).
-
-## 🔗 Links
-
-- [Documentation](https://docs.jarvis-ai.com)
-- [API Reference](https://api.jarvis-ai.com)
-- [Community Forum](https://forum.jarvis-ai.com)
-- [Bug Reports](https://github.com/your-repo/J.A.R.V.I.S/issues)
 
 ---
 

@@ -1,72 +1,184 @@
-import openai
 import os
 import json
 from dotenv import load_dotenv
+import openai
+import re
 
+# ===============================
+# 🔹 Load Environment & API Key
+# ===============================
 load_dotenv(dotenv_path=r"F:\J.A.R.V.I.S-master\.env")
 openai.api_key = os.getenv("OPENAI_API_KEY")
 
 if not openai.api_key:
-    print("Warning: OPENAI_API_KEY not found in .env file")
+    print("⚠️ Warning: OPENAI_API_KEY missing in .env file")
 
+
+# ===============================
+# 🔹 AI Intent Recognizer Class
+# ===============================
 class AIIntentRecognizer:
     def __init__(self):
-        self.system_prompt = """You are JARVIS AI assistant. Analyze user commands and return JSON with:
+        self.system_prompt = (
+            """You are JARVIS — an intelligent personal assistant.
+You receive natural language commands and must return a valid JSON in this format:
 {
-  "intent": "action_type",
+  "intent": "detected_intent",
   "entities": {"key": "value"},
   "confidence": 0.9,
   "action": "specific_action"
 }
 
-Analyze user commands and extract:
-1. Primary intent (what user wants to do)
-2. Target/object (what to act on) 
-3. Additional parameters
+✅ Rules:
+- Always output valid JSON (no text outside JSON).
+- intent = short snake_case name (e.g. "open_app", "search_youtube", "send_email").
+- entities = key-value pairs (e.g. {"app": "notepad"}, {"query": "AI news"}).
+- confidence = number between 0.0 and 1.0.
+- Be flexible with user wording.
 
-Return flexible JSON that captures the user's true intention.
 Examples:
-- "open youtube and search car songs" → intent: search_youtube, entities: {query: "car songs"}
-- "close notepad" → intent: close_app, entities: {app: "notepad"}
-- "send message to john" → intent: send_message, entities: {contact: "john"}
+- "open youtube and search car songs" → {"intent": "search_youtube", "entities": {"query": "car songs"}, "confidence": 0.95, "action": "youtube_search"}
+- "close notepad" → {"intent": "close_app", "entities": {"app": "notepad"}, "confidence": 0.9, "action": "app_close"}
+- "send message to john" → {"intent": "send_message", "entities": {"contact": "john"}, "confidence": 0.9, "action": "whatsapp_message"}"""
+        )
 
-Be flexible with entity names and capture the user's actual intent."""
-
-    def recognize_intent(self, user_input):
-        """Use OpenAI to recognize user intent"""
+    def recognize_intent(self, user_input: str) -> dict:
+        """Use OpenAI to recognize user intent and return structured JSON"""
         try:
+            if not user_input or len(user_input.strip()) < 2:
+                return self._fallback_intent(user_input, reason="Empty input")
+
+            # Select best available model
+            model = "gpt-4-turbo" if self._model_available("gpt-4-turbo") else "gpt-3.5-turbo"
+
             response = openai.ChatCompletion.create(
-                model="gpt-3.5-turbo",
+                model=model,
                 messages=[
                     {"role": "system", "content": self.system_prompt},
-                    {"role": "user", "content": f"Analyze: '{user_input}'"}
+                    {"role": "user", "content": f"Analyze this: {user_input}"}
                 ],
-                max_tokens=200,
+                max_tokens=250,
                 temperature=0.3
             )
-            
-            result = response.choices[0].message.content.strip()
-            return json.loads(result)
-            
+
+            result_text = response.choices[0].message.content.strip()
+
+            # Attempt to extract JSON from possibly mixed response
+            result_json = self._extract_json(result_text)
+
+            if not result_json:
+                print(f"⚠️ AI returned non-JSON response: {result_text}")
+                return self._fallback_intent(user_input, reason="Invalid JSON")
+
+            # Ensure required fields
+            return self._validate_result(result_json, user_input)
+
         except Exception as e:
-            print(f"AI Intent Recognition Error: {e}")
-            # Fallback intent recognition for common patterns
-            if "youtube" in user_input.lower() and "search" in user_input.lower():
-                query = user_input.lower().replace("open", "").replace("youtube", "").replace("search", "").replace("and", "").strip()
-                return {
-                    "intent": "search_youtube",
-                    "entities": {"query": query},
-                    "confidence": 0.8,
-                    "action": "youtube_search"
-                }
+            print(f"❌ AI Intent Recognition Error: {e}")
+            return self._fallback_intent(user_input, reason=str(e))
+
+    # ==============================================================
+    # 🔸 Utility Helpers
+    # ==============================================================
+
+    def _extract_json(self, text: str) -> dict:
+        """Try to extract and parse JSON object from the model response."""
+        try:
+            # Extract JSON block (if model adds extra text)
+            match = re.search(r'\{[\s\S]*\}', text)
+            if match:
+                text = match.group(0)
+            return json.loads(text)
+        except Exception:
+            return None
+
+    def _validate_result(self, data: dict, user_input: str) -> dict:
+        """Ensure the result has all required fields."""
+        return {
+            "intent": data.get("intent", "other"),
+            "entities": data.get("entities", {}),
+            "confidence": float(data.get("confidence", 0.7)),
+            "action": data.get("action", data.get("intent", "other")),
+            "original_text": user_input
+        }
+
+    def _fallback_intent(self, text: str, reason: str = "fallback") -> dict:
+        """Fallback rule-based intent extraction for common patterns."""
+        t = (text or "").lower()
+        entities = {}
+
+        # Simple heuristic rules
+        if "youtube" in t and ("search" in t or "play" in t):
+            query = re.sub(r".*(youtube|search|play)", "", t).strip()
+            entities["query"] = query
             return {
-                "intent": "other",
-                "entities": {},
-                "confidence": 0.1,
-                "action": "fallback"
+                "intent": "search_youtube",
+                "entities": entities,
+                "confidence": 0.8,
+                "action": "youtube_search",
+                "original_text": text
             }
 
-def get_ai_intent(query):
-    """Get AI-powered intent recognition"""
+        if "open" in t:
+            app = re.sub(r"(open|launch|start)", "", t).strip()
+            entities["app"] = app
+            return {
+                "intent": "open_app",
+                "entities": entities,
+                "confidence": 0.75,
+                "action": "open_application",
+                "original_text": text
+            }
+
+        if "close" in t:
+            app = re.sub(r"(close|exit|stop)", "", t).strip()
+            entities["app"] = app
+            return {
+                "intent": "close_app",
+                "entities": entities,
+                "confidence": 0.75,
+                "action": "close_application",
+                "original_text": text
+            }
+
+        return {
+            "intent": "other",
+            "entities": {},
+            "confidence": 0.2,
+            "action": "fallback",
+            "original_text": text
+        }
+
+    def _model_available(self, model_name: str) -> bool:
+        """Quick heuristic — tries to switch model if gpt-4 unavailable."""
+        try:
+            _ = openai.Model.retrieve(model_name)
+            return True
+        except Exception:
+            return False
+
+
+# ==============================================================
+# 🔸 Public Helper
+# ==============================================================
+def get_ai_intent(query: str) -> dict:
+    """Get AI-powered intent recognition output."""
     recognizer = AIIntentRecognizer()
-    return recognizer.recognize_intent(query)
+    result = recognizer.recognize_intent(query)
+    print(f"🤖 AI Intent: {result['intent']} (confidence: {result['confidence']})")
+    if result.get("entities"):
+        print(f"   Entities: {result['entities']}")
+    return result
+
+
+# ==============================================================
+# 🔸 Standalone Testing
+# ==============================================================
+if __name__ == "__main__":
+    print("🔍 JARVIS AI Intent Recognizer (type 'exit' to quit)\n")
+    while True:
+        query = input("You: ")
+        if query.lower() in ["exit", "quit", "bye"]:
+            break
+        output = get_ai_intent(query)
+        print(json.dumps(output, indent=2))
