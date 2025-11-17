@@ -31,15 +31,19 @@ You receive natural language commands and must return a valid JSON in this forma
 
 ✅ Rules:
 - Always output valid JSON (no text outside JSON).
-- intent = short snake_case name (e.g. "open_app", "search_youtube", "send_email").
+- intent = short snake_case name (e.g. "open_app", "search_youtube", "send_email", "schedule_meeting").
 - entities = key-value pairs (e.g. {"app": "notepad"}, {"query": "AI news"}).
 - confidence = number between 0.0 and 1.0.
 - Be flexible with user wording.
+- For emails, extract subject and generate professional body (3-4 sentences).
+- For dates: Extract EXACT date mentioned. "15 nov" = "15 November", "nov 15" = "15 November". Do NOT change the date.
+- For meetings: Extract subject, date, and time separately.
 
 Examples:
 - "open youtube and search car songs" → {"intent": "search_youtube", "entities": {"query": "car songs"}, "confidence": 0.95, "action": "youtube_search"}
-- "close notepad" → {"intent": "close_app", "entities": {"app": "notepad"}, "confidence": 0.9, "action": "app_close"}
-- "send message to john" → {"intent": "send_message", "entities": {"contact": "john"}, "confidence": 0.9, "action": "whatsapp_message"}"""
+- "schedule meeting with hod on 15 nov 2pm" → {"intent": "schedule_meeting", "entities": {"subject": "Meeting with HOD", "date": "15 November", "time": "2:00 PM"}, "confidence": 0.9, "action": "create_meeting"}
+- "meeting with team tomorrow 3pm" → {"intent": "schedule_meeting", "entities": {"subject": "Meeting with team", "date": "tomorrow", "time": "3:00 PM"}, "confidence": 0.9, "action": "create_meeting"}
+- "write a mail to head of department for sick leave" → {"intent": "send_email", "entities": {"subject": "Sick Leave Request", "body": "Dear Head of Department,\n\nI am writing to request sick leave due to health issues. I would like to take leave from [date] and will provide medical certificate if required.\n\nPlease approve my leave application.\n\nThank you.\nBest regards"}, "confidence": 0.9, "action": "compose_email"}"""
         )
 
     def recognize_intent(self, user_input: str) -> dict:
@@ -67,14 +71,14 @@ Examples:
             result_json = self._extract_json(result_text)
 
             if not result_json:
-                print(f"⚠️ AI returned non-JSON response: {result_text}")
+                print(f"AI returned non-JSON response: {result_text}")
                 return self._fallback_intent(user_input, reason="Invalid JSON")
 
             # Ensure required fields
             return self._validate_result(result_json, user_input)
 
         except Exception as e:
-            print(f"❌ AI Intent Recognition Error: {e}")
+            print(f"AI Intent Recognition Error: {e}")
             return self._fallback_intent(user_input, reason=str(e))
 
     # ==============================================================
@@ -165,7 +169,7 @@ def get_ai_intent(query: str) -> dict:
     """Get AI-powered intent recognition output."""
     recognizer = AIIntentRecognizer()
     result = recognizer.recognize_intent(query)
-    print(f"🤖 AI Intent: {result['intent']} (confidence: {result['confidence']})")
+    print(f"AI Intent: {result['intent']} (confidence: {result['confidence']})")
     if result.get("entities"):
         print(f"   Entities: {result['entities']}")
     return result
@@ -175,7 +179,7 @@ def get_ai_intent(query: str) -> dict:
 # 🔸 Standalone Testing
 # ==============================================================
 if __name__ == "__main__":
-    print("🔍 JARVIS AI Intent Recognizer (type 'exit' to quit)\n")
+    print("JARVIS AI Intent Recognizer (type 'exit' to quit)\n")
     while True:
         query = input("You: ")
         if query.lower() in ["exit", "quit", "bye"]:

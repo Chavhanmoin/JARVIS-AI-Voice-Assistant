@@ -7,6 +7,27 @@ import ctypes
 import threading
 import tkinter as tk
 from helpers import speak
+try:
+    from universal_app_control import open_app, close_app
+    print("DEBUG: Successfully imported universal_app_control")
+except Exception as e:
+    print(f"ERROR: Failed to import universal_app_control: {e}")
+    def open_app(name):
+        print(f"FALLBACK: Using pyautogui directly for {name}")
+        import pyautogui
+        import time
+        try:
+            pyautogui.press('win')
+            time.sleep(0.5)
+            pyautogui.write(name)
+            time.sleep(1)
+            pyautogui.press('enter')
+            speak(f"{name} opened.")
+            return True
+        except:
+            return False
+    def close_app(name):
+        return False
 
 # ===================================================
 # 🧠 JARVIS SYSTEM CONTROL — FULL EDITION
@@ -64,7 +85,6 @@ class SystemController:
     """Handles app management, file control, volume, brightness, and system commands."""
 
     def __init__(self):
-        speak("System controller initialized and ready.")
         self.installed_apps = self._get_installed_apps()
 
     # ---------------------------------------------------
@@ -113,28 +133,40 @@ class SystemController:
             "excel": "excel.exe",
             "spotify": "spotify.exe",
             "settings": "start ms-settings:",
+            "obs studio": "obs64.exe",
+            "obs": "obs64.exe",
+            "notion": "notion.exe",
+            "whatsapp": "start whatsapp:"
         }
 
         folders = {
             "documents": os.path.expanduser("~/Documents"),
             "desktop": os.path.expanduser("~/Desktop"),
             "downloads": os.path.expanduser("~/Downloads"),
+            "download": os.path.expanduser("~/Downloads"),
             "pictures": os.path.expanduser("~/Pictures"),
             "music": os.path.expanduser("~/Music"),
+            "file explorer": "explorer.exe",
+            "explorer": "explorer.exe",
+            "file": "explorer.exe"
         }
 
-        # Folder handling
+        # Folder and explorer handling
         if app_name in folders:
             path = folders[app_name]
-            os.startfile(path)
-            speak(f"Opened {app_name} folder.")
+            if path.endswith(".exe"):
+                subprocess.Popen(path, shell=True)
+                speak(f"{app_name} opened.")
+            else:
+                os.startfile(path)
+                speak(f"{app_name} folder opened.")
             return f"✅ Opened {app_name}."
 
         # App mapping
         if app_name in app_map:
             try:
                 subprocess.Popen(app_map[app_name], shell=True)
-                speak(f"{app_name} opened successfully.")
+                speak(f"{app_name} opened.")
                 return f"✅ Opened {app_name}."
             except Exception as e:
                 speak(f"Failed to open {app_name}.")
@@ -144,14 +176,28 @@ class SystemController:
         if app_name in self.installed_apps:
             path = self.installed_apps[app_name]
             if os.path.exists(path):
-                os.startfile(path)
-                speak(f"{app_name} opened successfully.")
+                # If it's a directory, look for executable
+                if os.path.isdir(path):
+                    for root, dirs, files in os.walk(path):
+                        for file in files:
+                            if file.lower().endswith('.exe') and app_name in file.lower():
+                                exe_path = os.path.join(root, file)
+                                subprocess.Popen(f'"{exe_path}"', shell=True)
+                                speak(f"{app_name} opened.")
+                                return f"✅ Opened {app_name}."
+                        break  # Only check first level
+                    # If no specific exe found, just open the folder
+                    os.startfile(path)
+                else:
+                    # If it's already an exe file
+                    subprocess.Popen(f'"{path}"', shell=True)
+                speak(f"{app_name} opened.")
                 return f"✅ Opened {app_name}."
 
         # .exe fallback
         try:
             subprocess.Popen(f"{app_name}.exe", shell=True)
-            speak(f"{app_name} opened successfully.")
+            speak(f"{app_name} opened.")
             return f"✅ Opened {app_name}."
         except:
             speak(f"I couldn’t find {app_name}.")
@@ -172,6 +218,9 @@ class SystemController:
             "excel": "excel.exe",
             "vscode": "Code.exe",
             "settings": "SystemSettings.exe",
+            "obs studio": "obs64.exe",
+            "obs": "obs64.exe",
+            "notion": "Notion.exe"
         }
 
         target = process_map.get(app_name, f"{app_name}.exe")
@@ -179,14 +228,16 @@ class SystemController:
 
         for proc in psutil.process_iter(["pid", "name"]):
             try:
-                if target.lower() in proc.info["name"].lower():
+                proc_name = proc.info["name"].lower()
+                # Check exact match or partial match
+                if target.lower() == proc_name or target.lower() in proc_name or app_name in proc_name:
                     proc.kill()
                     killed.append(proc.info["name"])
             except:
                 continue
 
         if killed:
-            speak(f"{app_name} closed successfully.")
+            speak(f"{app_name} closed.")
             return f"🛑 Closed: {', '.join(killed)}"
         else:
             speak(f"{app_name} is not currently running.")
@@ -311,15 +362,29 @@ def get_controller():
     return _controller_instance
 
 def open_anything(name):
-    controller = get_controller()
-    result = controller.open_application(name)
-    if "❌" in result:
-        result = controller.open_file_or_folder(name)
-    return result
+    print(f"DEBUG: open_anything ENTRY with: '{name}'")
+    import pyautogui
+    import time
+    try:
+        print(f"DEBUG: Starting Windows Start menu process")
+        pyautogui.press('win')
+        time.sleep(0.5)
+        pyautogui.write(name)
+        time.sleep(1)
+        pyautogui.press('enter')
+        speak(f"{name} opened.")
+        print(f"DEBUG: Successfully opened {name}")
+        return f"✅ Opened {name}."
+    except Exception as e:
+        print(f"ERROR in open_anything: {e}")
+        speak(f"Error opening {name}.")
+        return f"❌ Error opening {name}."
 
 def close_anything(name):
-    controller = get_controller()
-    return controller.close_application(name)
+    if close_app(name):
+        return f"🛑 Closed {name}."
+    else:
+        return f"⚠️ {name} is not running."
 
 def execute_system_command(command):
     controller = get_controller()

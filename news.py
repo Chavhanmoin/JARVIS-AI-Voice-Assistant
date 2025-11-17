@@ -38,7 +38,6 @@ def fetch_news(category=None):
 
         # If empty, try broader search
         if not articles:
-            print(f"⚠️ No {category} headlines found, switching to 'everything' endpoint...")
             alt_url = (
                 f"https://newsapi.org/v2/everything?"
                 f"q={category}&language=en&sortBy=publishedAt&pageSize=5&apiKey={NEWS_API_KEY}"

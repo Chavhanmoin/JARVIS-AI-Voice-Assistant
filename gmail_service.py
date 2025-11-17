@@ -59,6 +59,7 @@ def get_gmail_service():
                 print("🌐 Launching Chrome for Gmail authentication...")
                 subprocess.Popen([
                     CHROME_EXECUTABLE,
+                    "--user-data-dir=C:\\Users\\Admin\\AppData\\Local\\Google\\Chrome\\User Data",
                     "--profile-directory=Default",
                     "--new-window",
                     "https://accounts.google.com/"
@@ -94,21 +95,16 @@ def send_gmail_api(to_email: str, subject: str, body: str, send_now: bool = True
         if not service:
             return "❌ Gmail service not available."
 
-        # Add professional format to email
-        email_body = f"Dear Sir/Madam,\n\n{body}\n\nBest regards,\nMoin Raju Chavhan"
+        # Use the AI-generated body as-is (it already has proper formatting)
+        email_body = f"{body}\n\nBest regards,\nMoin Raju Chavhan"
 
         encoded_subject = urllib.parse.quote(subject)
         encoded_body = urllib.parse.quote(email_body)
 
         gmail_url = f"https://mail.google.com/mail/?view=cm&fs=1&su={encoded_subject}&body={encoded_body}"
 
-        # Open Gmail Compose window in Chrome
-        webbrowser.register(
-            "chrome",
-            None,
-            webbrowser.BackgroundBrowser(CHROME_EXECUTABLE)
-        )
-        webbrowser.get("chrome").open_new_tab(gmail_url)
+        # Open Gmail Compose window in Chrome with profile
+        subprocess.Popen([CHROME_EXECUTABLE, '--user-data-dir=C:\\Users\\Admin\\AppData\\Local\\Google\\Chrome\\User Data', '--profile-directory=Default', gmail_url])
 
         speak("Opening Gmail compose window for you to review and send.")
         print(f"📧 Gmail compose window opened with subject: '{subject}'")

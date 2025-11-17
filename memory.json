@@ -1,0 +1,35 @@
+[
+  {
+    "intent": "brightness",
+    "details": {
+      "query": "set brightness to"
+    },
+    "time": "2025-11-17T17:31:41.386874"
+  },
+  {
+    "intent": "brightness",
+    "details": {
+      "query": "brightness to"
+    },
+    "time": "2025-11-17T17:31:55.243779"
+  },
+  {
+    "intent": "news",
+    "details": {},
+    "time": "2025-11-17T17:35:26.197811"
+  },
+  {
+    "intent": "translate",
+    "details": {
+      "word": "hookup"
+    },
+    "time": "2025-11-17T17:57:26.187627"
+  },
+  {
+    "intent": "translate",
+    "details": {
+      "word": "makeover"
+    },
+    "time": "2025-11-17T17:58:05.916917"
+  }
+]
